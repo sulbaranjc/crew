@@ -147,19 +147,19 @@ if __name__ == "__main__":
 
     for m in mensajes_iniciales:
         if isinstance(m, HumanMessage):
-            print("Tú:", m.content)
+            print("👨 Tú:", m.content)
         elif isinstance(m, AIMessage) and isinstance(m.content, str):
-            print("Chatty:", m.content)
+            print("🦂 Chatty:", m.content)
     if mensajes_iniciales:
         print()
 
     while True:
-        user = input("Tú: ").strip()
+        user = input("👨 Tú: ").strip()
         if user.lower() in {"salir", "exit", "quit"}:
             break
         state["messages"].append(HumanMessage(content=user))
         state = app.invoke(state)
         last = state["messages"][-1]
         if isinstance(last, AIMessage) and isinstance(last.content, str):
-            print("Chatty:", last.content, "\n")
+            print("🦂 Chatty:", last.content, "\n")
         guardar(state["messages"])
