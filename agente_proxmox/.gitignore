@@ -1,0 +1,29 @@
+# Entornos virtuales
+.venv/
+venv/
+
+# Archivos de configuración locales
+.env
+*.env
+
+# Archivos de Python compilados
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Archivos de logs y datos temporales
+data/run_log.jsonl
+*.log
+
+# Archivos de bases de datos temporales
+*.sqlite3
+*.db
+
+# Archivos de usuario/IDE
+.vscode/
+.idea/
+.DS_Store
+
+# Otros
+*.swp

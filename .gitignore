@@ -1,0 +1,44 @@
+# Entornos virtuales
+.venv/
+venv/
+env/
+
+# Variables de entorno / secretos
+.env
+*.env
+!.env.example
+
+# Python compilado
+__pycache__/
+*.py[cod]
+*.pyd
+
+# Distribución / empaquetado
+dist/
+build/
+*.egg-info/
+*.egg
+
+# Historial de chats (datos de sesión local)
+historial_chat.json
+historial.json
+superagente/historial.json
+
+# Logs y datos de ejecución
+*.log
+*.jsonl
+agente_proxmox/data/run_log.jsonl
+
+# Bases de datos locales
+*.sqlite3
+*.db
+
+# IDE / editor
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+
+# Claude Code (metadatos locales del agente)
+.claude/
