@@ -1,38 +1,50 @@
-"""Memoria episódica — historial de conversación (persistencia JSON)."""
+"""Memoria episódica — historial de conversación (PostgreSQL)."""
 
-import json
-import os
 from typing import List
 from langchain_core.messages import HumanMessage, AIMessage, BaseMessage
+from .db import get_conn
 
-_BASE = os.path.join(os.path.dirname(__file__), "..", "..")
-EPISODICA_FILE = os.path.abspath(os.path.join(_BASE, "memoria_episodica.json"))
-
-# Migración automática desde archivo legacy
-_LEGACY_FILE = os.path.abspath(os.path.join(_BASE, "historial.json"))
+AGENTE = "superagente"
 
 
 def cargar() -> List[BaseMessage]:
-    archivo = EPISODICA_FILE if os.path.exists(EPISODICA_FILE) else _LEGACY_FILE
-    if not os.path.exists(archivo):
-        return []
-    with open(archivo, "r", encoding="utf-8") as f:
-        datos = json.load(f)
+    conn = get_conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT role, content FROM conversaciones "
+                "WHERE agente = %s ORDER BY timestamp ASC",
+                (AGENTE,)
+            )
+            rows = cur.fetchall()
+    finally:
+        conn.close()
+
     mensajes = []
-    for m in datos:
-        if m["type"] == "human":
-            mensajes.append(HumanMessage(content=m["content"]))
-        elif m["type"] == "ai":
-            mensajes.append(AIMessage(content=m["content"]))
+    for role, content in rows:
+        if role == "human":
+            mensajes.append(HumanMessage(content=content))
+        elif role == "ai":
+            mensajes.append(AIMessage(content=content))
     return mensajes
 
 
 def guardar(mensajes: List[BaseMessage]) -> None:
-    datos = []
-    for m in mensajes:
-        if isinstance(m, HumanMessage):
-            datos.append({"type": "human", "content": m.content})
-        elif isinstance(m, AIMessage) and isinstance(m.content, str):
-            datos.append({"type": "ai", "content": m.content})
-    with open(EPISODICA_FILE, "w", encoding="utf-8") as f:
-        json.dump(datos, f, ensure_ascii=False, indent=2)
+    conn = get_conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM conversaciones WHERE agente = %s", (AGENTE,))
+            for m in mensajes:
+                if isinstance(m, HumanMessage):
+                    cur.execute(
+                        "INSERT INTO conversaciones (agente, role, content) VALUES (%s, %s, %s)",
+                        (AGENTE, "human", m.content)
+                    )
+                elif isinstance(m, AIMessage) and isinstance(m.content, str):
+                    cur.execute(
+                        "INSERT INTO conversaciones (agente, role, content) VALUES (%s, %s, %s)",
+                        (AGENTE, "ai", m.content)
+                    )
+        conn.commit()
+    finally:
+        conn.close()

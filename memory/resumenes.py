@@ -1,41 +1,40 @@
-"""Memoria de resúmenes — resúmenes de sesiones anteriores (persistencia JSON)."""
+"""Memoria de resúmenes — resúmenes de sesiones anteriores (PostgreSQL)."""
 
-import json
-import os
 from datetime import datetime
+from .db import get_conn
 
-_BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-RESUMENES_FILE = os.path.join(_BASE, "memoria_resumenes.json")
-
-
-def _cargar_raw() -> list:
-    if not os.path.exists(RESUMENES_FILE):
-        return []
-    with open(RESUMENES_FILE, "r", encoding="utf-8") as f:
-        return json.load(f)
-
-
-def _guardar_raw(datos: list) -> None:
-    with open(RESUMENES_FILE, "w", encoding="utf-8") as f:
-        json.dump(datos, f, ensure_ascii=False, indent=2)
+AGENTE = "chatty"
 
 
 def guardar_resumen(resumen: str) -> None:
-    """Guarda un resumen de la sesión actual."""
-    datos = _cargar_raw()
-    datos.append({"resumen": resumen, "timestamp": datetime.now().isoformat()})
-    _guardar_raw(datos)
+    conn = get_conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "INSERT INTO resumenes (agente, resumen, timestamp) VALUES (%s, %s, %s)",
+                (AGENTE, resumen, datetime.now())
+            )
+        conn.commit()
+    finally:
+        conn.close()
 
 
 def cargar_resumenes() -> list[str]:
-    """Retorna lista de resúmenes de sesiones anteriores."""
-    return [entry["resumen"] for entry in _cargar_raw()]
+    conn = get_conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT resumen FROM resumenes WHERE agente = %s ORDER BY timestamp ASC",
+                (AGENTE,)
+            )
+            return [row[0] for row in cur.fetchall()]
+    finally:
+        conn.close()
 
 
 def como_contexto() -> str:
-    """Formatea los resúmenes para inyectarlos como contexto al LLM."""
     resumenes = cargar_resumenes()
     if not resumenes:
         return ""
     lineas = "\n".join(f"- {r}" for r in resumenes)
-    return f"Resúmenes de conversaciones anteriores:\n{lineas}"
+    return f"Resumenes de conversaciones anteriores:\n{lineas}"

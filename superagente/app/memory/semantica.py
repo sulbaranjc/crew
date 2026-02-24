@@ -1,33 +1,35 @@
-"""Memoria semántica — hechos clave del usuario y el sistema (persistencia JSON)."""
+"""Memoria semántica — hechos clave del usuario (PostgreSQL)."""
 
-import json
-import os
 from datetime import datetime
+from .db import get_conn
 
-_BASE = os.path.join(os.path.dirname(__file__), "..", "..")
-SEMANTICA_FILE = os.path.abspath(os.path.join(_BASE, "memoria_semantica.json"))
-
-
-def _cargar_raw() -> list:
-    if not os.path.exists(SEMANTICA_FILE):
-        return []
-    with open(SEMANTICA_FILE, "r", encoding="utf-8") as f:
-        return json.load(f)
-
-
-def _guardar_raw(datos: list) -> None:
-    with open(SEMANTICA_FILE, "w", encoding="utf-8") as f:
-        json.dump(datos, f, ensure_ascii=False, indent=2)
+AGENTE = "superagente"
 
 
 def guardar_hecho(hecho: str) -> None:
-    datos = _cargar_raw()
-    datos.append({"hecho": hecho, "timestamp": datetime.now().isoformat()})
-    _guardar_raw(datos)
+    conn = get_conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "INSERT INTO hechos (agente, hecho, timestamp) VALUES (%s, %s, %s)",
+                (AGENTE, hecho, datetime.now())
+            )
+        conn.commit()
+    finally:
+        conn.close()
 
 
 def cargar_hechos() -> list[str]:
-    return [entry["hecho"] for entry in _cargar_raw()]
+    conn = get_conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT hecho FROM hechos WHERE agente = %s ORDER BY timestamp ASC",
+                (AGENTE,)
+            )
+            return [row[0] for row in cur.fetchall()]
+    finally:
+        conn.close()
 
 
 def como_contexto() -> str:
