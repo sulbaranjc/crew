@@ -70,6 +70,26 @@ def cambiar_permisos(ruta: str, permisos: str) -> str:
         return f"Error al cambiar permisos: {e}"
 
 
+@tool
+def dia_de_la_semana(fecha: str) -> str:
+    """Calcula el día de la semana de una fecha. Formato: DD/MM/YYYY o YYYY-MM-DD."""
+    from datetime import date as _date
+    dias = ["lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo"]
+    try:
+        if "/" in fecha:
+            partes = fecha.strip().split("/")
+            if len(partes[2]) == 4:
+                d = _date(int(partes[2]), int(partes[1]), int(partes[0]))
+            else:
+                d = _date(int(partes[0]), int(partes[1]), int(partes[2]))
+        else:
+            partes = fecha.strip().split("-")
+            d = _date(int(partes[0]), int(partes[1]), int(partes[2]))
+        return f"{fecha} fue un {dias[d.weekday()]}"
+    except Exception as e:
+        return f"Error al calcular la fecha: {e}"
+
+
 # ── Memoria semántica ─────────────────────────────────────────────────────────
 
 @tool
@@ -93,7 +113,7 @@ def ver_lo_que_recuerdo() -> str:
 # ── LLM + tools ──────────────────────────────────────────────────────────────
 
 tools = [crear_archivo, leer_archivo, listar_directorio, eliminar_archivo,
-         cambiar_permisos, recordar_hecho, ver_lo_que_recuerdo]
+         cambiar_permisos, recordar_hecho, ver_lo_que_recuerdo, dia_de_la_semana]
 llm = ChatOllama(model=MODEL, base_url=BASE_URL, temperature=0.2)
 llm_with_tools = llm.bind_tools(tools)
 
@@ -128,7 +148,9 @@ SYSTEM_PROMPT = """Eres Chatty, un asistente personal. Sigue estas reglas sin ex
 4. Sé directo y conciso.
 5. MEMORIA: Cuando el usuario comparta datos personales (nombre, trabajo, ciudad, estudios,
    preferencias, etc.), llama INMEDIATAMENTE a la tool `recordar_hecho` para guardarlos.
-   No esperes a que te lo pidan — hazlo de forma proactiva y silenciosa."""
+   No esperes a que te lo pidan — hazlo de forma proactiva y silenciosa.
+6. FECHAS: Para calcular el día de la semana de cualquier fecha, SIEMPRE usa la tool
+   `dia_de_la_semana`. NUNCA calcules fechas de memoria — siempre puedes equivocarte."""
 
 if __name__ == "__main__":
     mensajes_iniciales = cargar()
