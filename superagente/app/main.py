@@ -1,6 +1,6 @@
-from langchain_core.messages import HumanMessage
+from langchain_core.messages import HumanMessage, SystemMessage
 from app.graph.orchestrator import orchestrator
-from app.memory.store import cargar_historial, guardar_historial
+from app.memory.store import cargar_historial, guardar_historial, contexto_semantico, contexto_resumenes
 from app.graph.state import SuperState
 
 
@@ -13,8 +13,15 @@ AGENTE_LABELS = {
 def main():
     print("Superagente iniciado. Escribe 'salir' para terminar.\n")
 
+    mensajes = cargar_historial()
+
+    # Inyectar contexto de memoria semántica y resúmenes como sistema
+    contexto = "\n\n".join(filter(None, [contexto_resumenes(), contexto_semantico()]))
+    if contexto:
+        mensajes = [SystemMessage(content=contexto)] + mensajes
+
     state: SuperState = {
-        "messages": cargar_historial(),
+        "messages": mensajes,
         "agent": None,
         "tool_results": None,
     }

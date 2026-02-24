@@ -19,10 +19,16 @@ build/
 *.egg-info/
 *.egg
 
-# Historial de chats (datos de sesión local)
+# Historial de chats y memorias (datos locales del usuario)
 historial_chat.json
 historial.json
 superagente/historial.json
+memoria_episodica.json
+memoria_semantica.json
+memoria_resumenes.json
+superagente/memoria_episodica.json
+superagente/memoria_semantica.json
+superagente/memoria_resumenes.json
 
 # Logs y datos de ejecución
 *.log

@@ -3,14 +3,15 @@ from langchain_core.tools import tool
 from langgraph.graph import StateGraph, END
 from langgraph.prebuilt import ToolNode, tools_condition
 from typing import TypedDict, List
-from langchain_core.messages import HumanMessage, AIMessage, BaseMessage
-import json
+from langchain_core.messages import HumanMessage, AIMessage, BaseMessage, SystemMessage
 import os
 
+from memory.episodica import cargar, guardar
+from memory.semantica import guardar_hecho, cargar_hechos, como_contexto as contexto_semantico
+from memory.resumenes import como_contexto as contexto_resumenes
 
 MODEL = "qwen2.5:7b-32k"
 BASE_URL = "http://127.0.0.1:11434"
-HISTORIAL_FILE = "historial_chat.json"
 
 
 # ── Tools de sistema de archivos ─────────────────────────────────────────────
@@ -69,9 +70,30 @@ def cambiar_permisos(ruta: str, permisos: str) -> str:
         return f"Error al cambiar permisos: {e}"
 
 
+# ── Memoria semántica ─────────────────────────────────────────────────────────
+
+@tool
+def recordar_hecho(hecho: str) -> str:
+    """Guarda un hecho importante sobre el usuario en la memoria semántica persistente.
+    Úsala siempre que el usuario comparta datos personales: nombre, trabajo, ciudad,
+    preferencias, habilidades o cualquier información relevante sobre él."""
+    guardar_hecho(hecho)
+    return f"Recordado: {hecho}"
+
+
+@tool
+def ver_lo_que_recuerdo() -> str:
+    """Muestra todos los hechos que recuerdas sobre el usuario."""
+    hechos = cargar_hechos()
+    if not hechos:
+        return "No tengo ningún dato guardado sobre ti todavía."
+    return "Lo que recuerdo de ti:\n" + "\n".join(f"- {h}" for h in hechos)
+
+
 # ── LLM + tools ──────────────────────────────────────────────────────────────
 
-tools = [crear_archivo, leer_archivo, listar_directorio, eliminar_archivo, cambiar_permisos]
+tools = [crear_archivo, leer_archivo, listar_directorio, eliminar_archivo,
+         cambiar_permisos, recordar_hecho, ver_lo_que_recuerdo]
 llm = ChatOllama(model=MODEL, base_url=BASE_URL, temperature=0.2)
 llm_with_tools = llm.bind_tools(tools)
 
@@ -97,46 +119,40 @@ graph.add_edge("tools", "chat")
 app = graph.compile()
 
 
-# ── Historial ─────────────────────────────────────────────────────────────────
-
-def cargar_historial():
-    if os.path.exists(HISTORIAL_FILE):
-        with open(HISTORIAL_FILE, "r", encoding="utf-8") as f:
-            datos = json.load(f)
-            mensajes = []
-            for m in datos:
-                if m["type"] == "human":
-                    mensajes.append(HumanMessage(content=m["content"]))
-                elif m["type"] == "ai":
-                    mensajes.append(AIMessage(content=m["content"]))
-            return mensajes
-    return []
-
-
-def guardar_historial(mensajes):
-    datos = []
-    for m in mensajes:
-        if isinstance(m, HumanMessage):
-            datos.append({"type": "human", "content": m.content})
-        elif isinstance(m, AIMessage) and isinstance(m.content, str):
-            datos.append({"type": "ai", "content": m.content})
-    with open(HISTORIAL_FILE, "w", encoding="utf-8") as f:
-        json.dump(datos, f, ensure_ascii=False, indent=2)
-
-
 # ── CLI ───────────────────────────────────────────────────────────────────────
 
+SYSTEM_PROMPT = """Eres Chatty, un asistente personal. Sigue estas reglas sin excepción:
+1. Tu nombre es CHATTY. Nunca digas que te llamas Qwen, Woen ni ningún otro nombre.
+2. Responde ÚNICAMENTE en español. PROHIBIDO usar caracteres chinos (汉字), japoneses (ひらがな) ni coreanos (한글).
+3. Si detectas que ibas a escribir un carácter asiático, sustitúyelo por la palabra en español.
+4. Sé directo y conciso.
+5. MEMORIA: Cuando el usuario comparta datos personales (nombre, trabajo, ciudad, estudios,
+   preferencias, etc.), llama INMEDIATAMENTE a la tool `recordar_hecho` para guardarlos.
+   No esperes a que te lo pidan — hazlo de forma proactiva y silenciosa."""
+
 if __name__ == "__main__":
-    state: State = {"messages": cargar_historial()}
+    mensajes_iniciales = cargar()
+
+    # System prompt base (siempre primero)
+    sistema = SYSTEM_PROMPT
+
+    # Añadir contexto de memoria semántica y resúmenes si existen
+    contexto = "\n\n".join(filter(None, [contexto_resumenes(), contexto_semantico()]))
+    if contexto:
+        sistema += "\n\n" + contexto
+
+    mensajes_iniciales = [SystemMessage(content=sistema)] + mensajes_iniciales
+    state: State = {"messages": mensajes_iniciales}
     print("Chatty (LangGraph + Ollama + tools). Escribe 'salir' para terminar.\n")
-    if state["messages"]:
-        print("Historial cargado:")
-        for m in state["messages"]:
-            if isinstance(m, HumanMessage):
-                print("Tú:", m.content)
-            elif isinstance(m, AIMessage) and isinstance(m.content, str):
-                print("Chatty:", m.content)
+
+    for m in mensajes_iniciales:
+        if isinstance(m, HumanMessage):
+            print("Tú:", m.content)
+        elif isinstance(m, AIMessage) and isinstance(m.content, str):
+            print("Chatty:", m.content)
+    if mensajes_iniciales:
         print()
+
     while True:
         user = input("Tú: ").strip()
         if user.lower() in {"salir", "exit", "quit"}:
@@ -146,4 +162,4 @@ if __name__ == "__main__":
         last = state["messages"][-1]
         if isinstance(last, AIMessage) and isinstance(last.content, str):
             print("Chatty:", last.content, "\n")
-        guardar_historial(state["messages"])
+        guardar(state["messages"])
