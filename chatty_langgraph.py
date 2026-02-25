@@ -179,17 +179,18 @@ if __name__ == "__main__":
         user = input("👨 Tú: ").strip()
         if user.lower() in {"salir", "exit", "quit"}:
             break
-        # Actualizar contexto semántico relevante para este mensaje
-        ctx_sem = contexto_semantico(user)
+        # Buscar contexto semántico solo si el mensaje es sustancioso
+        ctx_sem = contexto_semantico(user) if len(user) >= 15 else ""
         if ctx_sem:
             state["messages"] = [
                 m for m in state["messages"] if not isinstance(m, SystemMessage)
             ]
             state["messages"] = [SystemMessage(content=SYSTEM_PROMPT + "\n\n" + ctx_sem + "\n\n" + contexto_resumenes())] + state["messages"]
 
+        n_antes = len(state["messages"])
         state["messages"].append(HumanMessage(content=user))
         state = app.invoke(state)
         last = state["messages"][-1]
         if isinstance(last, AIMessage) and isinstance(last.content, str):
             print("🦂 Chatty:", last.content, "\n")
-        guardar(state["messages"])
+        guardar(state["messages"][n_antes:])
