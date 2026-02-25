@@ -5,6 +5,8 @@ from langgraph.prebuilt import ToolNode, tools_condition
 from typing import TypedDict, List
 from langchain_core.messages import HumanMessage, AIMessage, BaseMessage, SystemMessage
 import os
+import re
+import inspect
 
 from memory.episodica import cargar, guardar
 from memory.semantica import guardar_hecho, cargar_hechos, como_contexto as contexto_semantico
@@ -100,6 +102,11 @@ CHATTY_TOOLS = [
 
 tools = CHATTY_TOOLS + SISTEMA_TOOLS + SSH_PVE_TOOLS
 
+# Mapa nombre → objeto tool (para el interceptor)
+_TOOLS_MAP: dict = {t.name: t for t in tools}
+# Tools cuyo resultado no necesita re-invocación del LLM (solo guardan, no devuelven datos)
+_TOOLS_SILENCIOSAS: set = {"recordar_hecho"}
+
 
 # ── LLM + grafo ───────────────────────────────────────────────────────────────
 
@@ -168,6 +175,45 @@ Reglas adicionales:
    qué tool habría que programar.
 8. Tus herramientas disponibles:
 {_describir_tools()}"""
+
+# ── Interceptor: detecta tool calls escritas como texto y las ejecuta ────────
+
+def _interceptar_y_ejecutar(texto: str) -> tuple[str, dict[str, str]]:
+    """
+    Detecta patrones -?tool_name("arg") o tool_name() en el texto del modelo,
+    los ejecuta realmente y devuelve (texto_limpio, {nombre: resultado}).
+
+    Funciona para cualquier tool del mapa sin mantenimiento adicional.
+    """
+    if not _TOOLS_MAP:
+        return texto, {}
+
+    # Ordenar por longitud descendente para evitar coincidencias parciales
+    nombres_re = "|".join(re.escape(n) for n in sorted(_TOOLS_MAP.keys(), key=len, reverse=True))
+    # Captura: -?tool_name(  "contenido"  ) o tool_name()
+    patron = re.compile(
+        rf'-?({nombres_re})\s*\(\s*(?:"((?:[^"\\]|\\.)*)"\s*)?\)',
+        re.MULTILINE | re.DOTALL,
+    )
+
+    ejecutados: dict[str, str] = {}
+    for m in patron.finditer(texto):
+        nombre = m.group(1)
+        arg_str = m.group(2)  # None si no hay argumento entre comillas
+        t = _TOOLS_MAP[nombre]
+        try:
+            if arg_str is None:
+                res = t.invoke({})
+            else:
+                params = list(inspect.signature(t.func).parameters.keys())
+                res = t.invoke({params[0]: arg_str} if params else {})
+        except Exception as e:
+            res = f"[Error al ejecutar {nombre}: {e}]"
+        ejecutados[nombre] = str(res)
+
+    texto_limpio = patron.sub("", texto).strip()
+    return texto_limpio, ejecutados
+
 
 # ── Opción B: forzado de tools por keywords ──────────────────────────────────
 
@@ -242,6 +288,33 @@ if __name__ == "__main__":
 
         state = app.invoke(state)
         last = state["messages"][-1]
+
         if isinstance(last, AIMessage) and isinstance(last.content, str):
-            print("🦂 Chatty:", last.content, "\n")
+            texto_limpio, ejecutados = _interceptar_y_ejecutar(last.content)
+
+            if ejecutados:
+                silenciosas = {k: v for k, v in ejecutados.items() if k in _TOOLS_SILENCIOSAS}
+                con_datos   = {k: v for k, v in ejecutados.items() if k not in _TOOLS_SILENCIOSAS}
+
+                # Tools silenciosas: solo confirmar, no re-invocar
+                for nombre in silenciosas:
+                    print(f"💾 [{nombre}] guardado en memoria.\n")
+
+                if con_datos:
+                    # Re-invocar LLM con los datos para que los presente correctamente
+                    ctx = "\n".join(f"[Resultado de {k}]:\n{v}" for k, v in con_datos.items())
+                    msgs_reinvoke = state["messages"] + [
+                        HumanMessage(content=f"[Datos obtenidos automáticamente]:\n{ctx}\n\nPresenta estos resultados al usuario de forma clara y en español.")
+                    ]
+                    reinvocado = llm.invoke(msgs_reinvoke)
+                    respuesta_final = reinvocado.content if isinstance(reinvocado.content, str) else texto_limpio
+                    state["messages"].append(AIMessage(content=respuesta_final))
+                else:
+                    respuesta_final = texto_limpio or "Hecho."
+                    state["messages"][-1] = AIMessage(content=respuesta_final)
+
+                print("🦂 Chatty:", respuesta_final, "\n")
+            else:
+                print("🦂 Chatty:", last.content, "\n")
+
         guardar(state["messages"][n_antes:])
