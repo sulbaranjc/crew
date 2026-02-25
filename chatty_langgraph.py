@@ -127,7 +127,23 @@ app = graph.compile()
 
 # ── CLI ───────────────────────────────────────────────────────────────────────
 
-_proxmox_info = " Proxmox VE (nodos, VMs, cluster)." if PROXMOX_ENABLED else ""
+def _describir_tools() -> str:
+    grupos = {
+        "Archivos y sistema": ["crear_archivo", "eliminar_archivo", "cambiar_permisos",
+                               "leer_archivo", "listar_directorio", "buscar_archivos",
+                               "buscar_contenido", "ejecutar_comando_seguro"],
+        "Monitoreo":          ["info_sistema", "uso_disco", "uso_memoria",
+                               "procesos_activos", "info_red", "paquetes_instalados"],
+        "Memoria":            ["recordar_hecho", "ver_lo_que_recuerdo"],
+        "Utilidades":         ["dia_de_la_semana"],
+    }
+    if PROXMOX_ENABLED:
+        grupos["Proxmox"] = ["proxmox_nodos", "proxmox_vms", "proxmox_cluster", "proxmox_version"]
+    lineas = []
+    for grupo, nombres in grupos.items():
+        lineas.append(f"  {grupo}: {', '.join(nombres)}")
+    return "\n".join(lineas)
+
 
 SYSTEM_PROMPT = f"""Eres Chatty, un asistente personal con acceso a herramientas del sistema. Reglas:
 1. Tu nombre es CHATTY. Nunca digas que te llamas Qwen ni ningún otro nombre.
@@ -137,9 +153,10 @@ SYSTEM_PROMPT = f"""Eres Chatty, un asistente personal con acceso a herramientas
    preferencias, etc.), llama INMEDIATAMENTE a `recordar_hecho`. Hazlo de forma silenciosa.
 5. FECHAS: Para calcular el día de la semana, SIEMPRE usa la tool `dia_de_la_semana`.
 6. SISTEMA: Puedes consultar archivos, procesos, disco, memoria, red y más usando las tools
-   de sistema. Úsalas cuando el usuario pregunte sobre su máquina o pida explorar archivos.{_proxmox_info and f'''
-7. PROXMOX: Puedes consultar el estado del servidor Proxmox usando las tools de proxmox.
-   Úsalas cuando el usuario pregunte sobre VMs, nodos o el cluster.'''}"""
+   de sistema. Úsalas cuando el usuario pregunte sobre su máquina o pida explorar archivos.
+7. HERRAMIENTAS: Si el usuario pregunta qué puedes hacer o qué herramientas tienes, lista
+   todas tus capacidades usando la siguiente información:
+{_describir_tools()}"""
 
 if __name__ == "__main__":
     mensajes_iniciales = cargar()
