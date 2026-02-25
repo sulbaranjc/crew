@@ -156,7 +156,11 @@ SYSTEM_PROMPT = f"""Eres Chatty, un asistente personal con acceso a herramientas
    de sistema. Úsalas cuando el usuario pregunte sobre su máquina o pida explorar archivos.
 7. HERRAMIENTAS: Si el usuario pregunta qué puedes hacer o qué herramientas tienes, lista
    todas tus capacidades usando la siguiente información:
-{_describir_tools()}"""
+{_describir_tools()}
+8. HERRAMIENTAS FALTANTES: Si el usuario te pide algo que no puedes resolver con tus
+   herramientas actuales, díselo claramente y explícale qué tool habría que programar
+   para resolverlo. Ejemplo: "No tengo esa capacidad aún, pero se podría añadir una tool
+   que haga X."."""
 
 if __name__ == "__main__":
     mensajes_iniciales = cargar()
