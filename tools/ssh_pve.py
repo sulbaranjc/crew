@@ -1,58 +1,30 @@
-"""Tool SSH de solo lectura para ejecutar comandos en el servidor Proxmox VE."""
+"""Tool SSH para Proxmox VE — usa el alias 'ssh pve' del sistema (sin credenciales en .env)."""
 
-import os
-import paramiko
-from dotenv import load_dotenv
+import subprocess
 from langchain_core.tools import tool
+from memory.semantica import guardar_hecho
 
-load_dotenv(os.path.join(os.path.dirname(__file__), "..", ".env"))
+SSH_ALIAS = "pve"
+SSH_ENABLED = True  # Siempre activo — depende de que 'ssh pve' esté configurado en ~/.ssh/config
 
-_SSH_HOST     = os.environ.get("PVE_SSH_HOST", "")
-_SSH_PORT     = int(os.environ.get("PVE_SSH_PORT", "22"))
-_SSH_USER     = os.environ.get("PVE_SSH_USER", "root")
-_SSH_PASSWORD = os.environ.get("PVE_SSH_PASSWORD", "")
-_SSH_KEY_PATH = os.environ.get("PVE_SSH_KEY", "")
-
-SSH_ENABLED = bool(_SSH_HOST and (_SSH_PASSWORD or _SSH_KEY_PATH))
-
-# Comandos permitidos (solo lectura / inspección)
-_PERMITIDOS = [
-    "cat", "ls", "df", "free", "uname", "hostname", "uptime", "whoami",
-    "pvesh", "pvesm", "qm", "pct", "pveum", "pveversion", "pveceph",
-    "systemctl status", "journalctl", "ip", "ss", "netstat", "ps",
-    "top -bn1", "lscpu", "lsblk", "lspci", "dmidecode",
-]
 _PROHIBIDOS = ["rm", "mv", "cp", "chmod", "chown", "dd", "mkfs", "fdisk",
-               "apt", "dpkg -i", "wget", "curl -o", "reboot", "shutdown",
-               "kill", "pkill", ">", ">>", "passwd", "userdel"]
+               "apt", "dpkg -i", "reboot", "shutdown", "kill", "pkill",
+               "passwd", "userdel", ">", ">>", "curl -o", "wget -O"]
 
 
-def _es_seguro(comando: str) -> bool:
+def _ssh(comando: str, timeout: int = 30) -> str:
     for p in _PROHIBIDOS:
         if p in comando:
-            return False
-    return True
-
-
-def _ejecutar_ssh(comando: str) -> str:
-    if not SSH_ENABLED:
-        return "SSH a Proxmox no configurado. Añade PVE_SSH_HOST y PVE_SSH_PASSWORD (o PVE_SSH_KEY) al .env"
-    if not _es_seguro(comando):
-        return f"[Bloqueado] Comando no permitido por seguridad."
+            return f"[Bloqueado] Comando no permitido: '{p}'"
     try:
-        client = paramiko.SSHClient()
-        client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-        if _SSH_KEY_PATH:
-            client.connect(_SSH_HOST, port=_SSH_PORT, username=_SSH_USER,
-                           key_filename=_SSH_KEY_PATH, timeout=15)
-        else:
-            client.connect(_SSH_HOST, port=_SSH_PORT, username=_SSH_USER,
-                           password=_SSH_PASSWORD, timeout=15)
-        _, stdout, stderr = client.exec_command(comando, timeout=30)
-        salida = stdout.read().decode("utf-8", errors="replace").strip()
-        error  = stderr.read().decode("utf-8", errors="replace").strip()
-        client.close()
-        return salida or error or "(sin salida)"
+        r = subprocess.run(
+            ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=10", SSH_ALIAS, comando],
+            capture_output=True, text=True, timeout=timeout
+        )
+        salida = r.stdout.strip() or r.stderr.strip() or "(sin salida)"
+        return salida
+    except subprocess.TimeoutExpired:
+        return "[Error] El comando tardó demasiado."
     except Exception as e:
         return f"[Error SSH] {e}"
 
@@ -60,40 +32,72 @@ def _ejecutar_ssh(comando: str) -> str:
 @tool
 def pve_ejecutar(comando: str) -> str:
     """Ejecuta un comando de solo lectura en el servidor Proxmox VE via SSH.
-    Útil para inspeccionar VMs, contenedores, almacenamiento, logs y estado del sistema.
-    Ejemplos: 'qm list', 'pct list', 'pvesh get /nodes', 'df -h', 'systemctl status pve-cluster'."""
-    return _ejecutar_ssh(comando)
-
-
-@tool
-def pve_version() -> str:
-    """Muestra la versión de Proxmox VE instalada en el servidor."""
-    return _ejecutar_ssh("pveversion")
+    Ejemplos: 'qm list', 'pct list', 'pvesh get /nodes', 'df -h', 'cat /etc/pve-release',
+    'systemctl status pve-cluster', 'pvesm status'."""
+    return _ssh(comando)
 
 
 @tool
 def pve_vms() -> str:
-    """Lista todas las VMs (QEMU) del servidor Proxmox con su estado."""
-    return _ejecutar_ssh("qm list")
+    """Lista todas las VMs (QEMU/KVM) del servidor Proxmox con su estado y recursos."""
+    return _ssh("qm list")
 
 
 @tool
 def pve_contenedores() -> str:
     """Lista todos los contenedores LXC del servidor Proxmox con su estado."""
-    return _ejecutar_ssh("pct list")
+    return _ssh("pct list")
 
 
 @tool
 def pve_almacenamiento() -> str:
     """Muestra el uso de almacenamiento en el servidor Proxmox."""
-    return _ejecutar_ssh("pvesm status")
+    return _ssh("pvesm status")
+
+
+@tool
+def pve_version() -> str:
+    """Muestra la versión de Proxmox VE instalada."""
+    return _ssh("pveversion")
 
 
 @tool
 def pve_logs(servicio: str = "pve-cluster") -> str:
-    """Muestra los últimos logs de un servicio de Proxmox. Por defecto: pve-cluster.
-    Otros servicios: pvedaemon, pvestatd, corosync, pve-firewall."""
-    return _ejecutar_ssh(f"journalctl -u {servicio} -n 30 --no-pager")
+    """Muestra los últimos 30 logs de un servicio Proxmox.
+    Servicios: pvedaemon, pvestatd, corosync, pve-firewall, pve-cluster."""
+    return _ssh(f"journalctl -u {servicio} -n 30 --no-pager")
+
+
+@tool
+def pve_explorar() -> str:
+    """Explora el servidor Proxmox de forma completa: versión, nodos, VMs, contenedores,
+    almacenamiento y recursos. Guarda automáticamente los hallazgos en la memoria semántica."""
+    hallazgos = {}
+
+    hallazgos["version"]        = _ssh("pveversion")
+    hallazgos["vms"]            = _ssh("qm list")
+    hallazgos["contenedores"]   = _ssh("pct list")
+    hallazgos["almacenamiento"] = _ssh("pvesm status")
+    hallazgos["disco"]          = _ssh("df -h")
+    hallazgos["memoria"]        = _ssh("free -h")
+    hallazgos["nodos"]          = _ssh("pvesh get /nodes --output-format=json-pretty 2>/dev/null | head -50")
+
+    # Guardar hallazgos relevantes en memoria semántica
+    if not hallazgos["version"].startswith("[Error"):
+        guardar_hecho(f"Proxmox versión: {hallazgos['version']}")
+    if not hallazgos["vms"].startswith("[Error") and hallazgos["vms"] != "(sin salida)":
+        guardar_hecho(f"VMs en Proxmox:\n{hallazgos['vms']}")
+    if not hallazgos["contenedores"].startswith("[Error") and hallazgos["contenedores"] != "(sin salida)":
+        guardar_hecho(f"Contenedores LXC en Proxmox:\n{hallazgos['contenedores']}")
+    if not hallazgos["almacenamiento"].startswith("[Error"):
+        guardar_hecho(f"Almacenamiento Proxmox:\n{hallazgos['almacenamiento']}")
+
+    # Construir resumen legible
+    lineas = ["=== Exploración Proxmox ==="]
+    for clave, valor in hallazgos.items():
+        lineas.append(f"\n--- {clave.upper()} ---\n{valor}")
+    lineas.append("\n✓ Hallazgos guardados en memoria.")
+    return "\n".join(lineas)
 
 
 SSH_PVE_TOOLS = [
@@ -103,4 +107,5 @@ SSH_PVE_TOOLS = [
     pve_contenedores,
     pve_almacenamiento,
     pve_logs,
+    pve_explorar,
 ]

@@ -158,6 +158,10 @@ SYSTEM_PROMPT = f"""Eres Chatty, un asistente personal con acceso a herramientas
 5. FECHAS: Para calcular el día de la semana, SIEMPRE usa la tool `dia_de_la_semana`.
 6. SISTEMA: Puedes consultar archivos, procesos, disco, memoria, red y más usando las tools
    de sistema. Úsalas cuando el usuario pregunte sobre su máquina o pida explorar archivos.
+   PROXMOX SSH: Tienes acceso directo al servidor Proxmox via SSH (alias 'pve'). Cuando el
+   usuario pida información de Proxmox, USA las tools pve_* directamente SIN pedir al usuario
+   que ejecute comandos. Para una exploración completa usa `pve_explorar` que además guarda
+   los hallazgos en memoria automáticamente.
 7. HERRAMIENTAS: Si el usuario pregunta qué puedes hacer o qué herramientas tienes, lista
    todas tus capacidades usando la siguiente información:
 {_describir_tools()}
