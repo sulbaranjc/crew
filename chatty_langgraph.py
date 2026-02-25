@@ -11,6 +11,7 @@ from memory.semantica import guardar_hecho, cargar_hechos, como_contexto as cont
 from memory.resumenes import como_contexto as contexto_resumenes
 from tools.sistema import SISTEMA_TOOLS
 from tools.proxmox import PROXMOX_TOOLS, PROXMOX_ENABLED
+from tools.ssh_pve import SSH_PVE_TOOLS, SSH_ENABLED as SSH_PVE_ENABLED
 
 MODEL = "qwen2.5:latest"
 BASE_URL = "http://127.0.0.1:11434"
@@ -97,7 +98,7 @@ CHATTY_TOOLS = [
     recordar_hecho, ver_lo_que_recuerdo, dia_de_la_semana,
 ]
 
-tools = CHATTY_TOOLS + SISTEMA_TOOLS + PROXMOX_TOOLS
+tools = CHATTY_TOOLS + SISTEMA_TOOLS + PROXMOX_TOOLS + SSH_PVE_TOOLS
 
 
 # ── LLM + grafo ───────────────────────────────────────────────────────────────
@@ -138,7 +139,10 @@ def _describir_tools() -> str:
         "Utilidades":         ["dia_de_la_semana"],
     }
     if PROXMOX_ENABLED:
-        grupos["Proxmox"] = ["proxmox_nodos", "proxmox_vms", "proxmox_cluster", "proxmox_version"]
+        grupos["Proxmox API"] = ["proxmox_nodos", "proxmox_vms", "proxmox_cluster", "proxmox_version"]
+    if SSH_PVE_ENABLED:
+        grupos["Proxmox SSH"] = ["pve_ejecutar", "pve_version", "pve_vms",
+                                  "pve_contenedores", "pve_almacenamiento", "pve_logs"]
     lineas = []
     for grupo, nombres in grupos.items():
         lineas.append(f"  {grupo}: {', '.join(nombres)}")
