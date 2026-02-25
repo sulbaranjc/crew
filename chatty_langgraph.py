@@ -9,12 +9,14 @@ import os
 from memory.episodica import cargar, guardar
 from memory.semantica import guardar_hecho, cargar_hechos, como_contexto as contexto_semantico
 from memory.resumenes import como_contexto as contexto_resumenes
+from tools.sistema import SISTEMA_TOOLS
+from tools.proxmox import PROXMOX_TOOLS, PROXMOX_ENABLED
 
 MODEL = "qwen2.5:latest"
 BASE_URL = "http://127.0.0.1:11434"
 
 
-# ── Tools de sistema de archivos ─────────────────────────────────────────────
+# ── Tools exclusivas de Chatty ────────────────────────────────────────────────
 
 @tool
 def crear_archivo(ruta: str, contenido: str) -> str:
@@ -26,28 +28,6 @@ def crear_archivo(ruta: str, contenido: str) -> str:
         return f"Archivo creado correctamente: {ruta}"
     except Exception as e:
         return f"Error al crear el archivo: {e}"
-
-
-@tool
-def leer_archivo(ruta: str) -> str:
-    """Lee y devuelve el contenido de un archivo existente."""
-    try:
-        with open(ruta, "r", encoding="utf-8") as f:
-            return f.read()
-    except Exception as e:
-        return f"Error al leer el archivo: {e}"
-
-
-@tool
-def listar_directorio(ruta: str) -> str:
-    """Lista los archivos y carpetas dentro del directorio indicado."""
-    try:
-        entries = os.listdir(ruta)
-        if not entries:
-            return f"El directorio '{ruta}' está vacío."
-        return "\n".join(sorted(entries))
-    except Exception as e:
-        return f"Error al listar el directorio: {e}"
 
 
 @tool
@@ -110,15 +90,21 @@ def ver_lo_que_recuerdo() -> str:
     return "Lo que recuerdo de ti:\n" + "\n".join(f"- {h}" for h in hechos)
 
 
-# ── LLM + tools ──────────────────────────────────────────────────────────────
+# ── Registro de tools ─────────────────────────────────────────────────────────
 
-tools = [crear_archivo, leer_archivo, listar_directorio, eliminar_archivo,
-         cambiar_permisos, recordar_hecho, ver_lo_que_recuerdo, dia_de_la_semana]
+CHATTY_TOOLS = [
+    crear_archivo, eliminar_archivo, cambiar_permisos,
+    recordar_hecho, ver_lo_que_recuerdo, dia_de_la_semana,
+]
+
+tools = CHATTY_TOOLS + SISTEMA_TOOLS + PROXMOX_TOOLS
+
+
+# ── LLM + grafo ───────────────────────────────────────────────────────────────
+
 llm = ChatOllama(model=MODEL, base_url=BASE_URL, temperature=0.2)
 llm_with_tools = llm.bind_tools(tools)
 
-
-# ── Grafo ─────────────────────────────────────────────────────────────────────
 
 class State(TypedDict):
     messages: List[BaseMessage]
@@ -141,31 +127,35 @@ app = graph.compile()
 
 # ── CLI ───────────────────────────────────────────────────────────────────────
 
-SYSTEM_PROMPT = """Eres Chatty, un asistente personal. Sigue estas reglas sin excepción:
-1. Tu nombre es CHATTY. Nunca digas que te llamas Qwen, Woen ni ningún otro nombre.
-2. Responde ÚNICAMENTE en español. PROHIBIDO usar caracteres chinos (汉字), japoneses (ひらがな) ni coreanos (한글).
-3. Si detectas que ibas a escribir un carácter asiático, sustitúyelo por la palabra en español.
-4. Sé directo y conciso.
-5. MEMORIA: Cuando el usuario comparta datos personales (nombre, trabajo, ciudad, estudios,
-   preferencias, etc.), llama INMEDIATAMENTE a la tool `recordar_hecho` para guardarlos.
-   No esperes a que te lo pidan — hazlo de forma proactiva y silenciosa.
-6. FECHAS: Para calcular el día de la semana de cualquier fecha, SIEMPRE usa la tool
-   `dia_de_la_semana`. NUNCA calcules fechas de memoria — siempre puedes equivocarte."""
+_proxmox_info = " Proxmox VE (nodos, VMs, cluster)." if PROXMOX_ENABLED else ""
+
+SYSTEM_PROMPT = f"""Eres Chatty, un asistente personal con acceso a herramientas del sistema. Reglas:
+1. Tu nombre es CHATTY. Nunca digas que te llamas Qwen ni ningún otro nombre.
+2. Responde ÚNICAMENTE en español. PROHIBIDO usar caracteres chinos, japoneses o coreanos.
+3. Sé directo y conciso.
+4. MEMORIA: Cuando el usuario comparta datos personales (nombre, trabajo, ciudad, estudios,
+   preferencias, etc.), llama INMEDIATAMENTE a `recordar_hecho`. Hazlo de forma silenciosa.
+5. FECHAS: Para calcular el día de la semana, SIEMPRE usa la tool `dia_de_la_semana`.
+6. SISTEMA: Puedes consultar archivos, procesos, disco, memoria, red y más usando las tools
+   de sistema. Úsalas cuando el usuario pregunte sobre su máquina o pida explorar archivos.{_proxmox_info and f'''
+7. PROXMOX: Puedes consultar el estado del servidor Proxmox usando las tools de proxmox.
+   Úsalas cuando el usuario pregunte sobre VMs, nodos o el cluster.'''}"""
 
 if __name__ == "__main__":
     mensajes_iniciales = cargar()
 
-    # System prompt base (siempre primero)
     sistema = SYSTEM_PROMPT
-
-    # Añadir contexto de memoria semántica y resúmenes si existen
     contexto = "\n\n".join(filter(None, [contexto_resumenes(), contexto_semantico()]))
     if contexto:
         sistema += "\n\n" + contexto
 
     mensajes_iniciales = [SystemMessage(content=sistema)] + mensajes_iniciales
     state: State = {"messages": mensajes_iniciales}
-    print("Chatty (LangGraph + Ollama + tools). Escribe 'salir' para terminar.\n")
+
+    poderes = f"archivos · sistema · memoria"
+    if PROXMOX_ENABLED:
+        poderes += " · proxmox"
+    print(f"Chatty [{poderes}]. Escribe 'salir' para terminar.\n")
 
     for m in mensajes_iniciales:
         if isinstance(m, HumanMessage):
@@ -179,6 +169,7 @@ if __name__ == "__main__":
         user = input("👨 Tú: ").strip()
         if user.lower() in {"salir", "exit", "quit"}:
             break
+
         # Buscar contexto semántico solo si el mensaje es sustancioso
         ctx_sem = contexto_semantico(user) if len(user) >= 15 else ""
         if ctx_sem:
