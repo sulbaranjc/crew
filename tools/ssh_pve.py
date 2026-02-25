@@ -102,10 +102,5 @@ def pve_explorar() -> str:
 
 SSH_PVE_TOOLS = [
     pve_ejecutar,
-    pve_version,
-    pve_vms,
-    pve_contenedores,
-    pve_almacenamiento,
-    pve_logs,
     pve_explorar,
 ]
