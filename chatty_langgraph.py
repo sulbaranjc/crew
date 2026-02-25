@@ -10,7 +10,7 @@ from memory.episodica import cargar, guardar
 from memory.semantica import guardar_hecho, cargar_hechos, como_contexto as contexto_semantico
 from memory.resumenes import como_contexto as contexto_resumenes
 
-MODEL = "qwen2.5:7b-32k"
+MODEL = "qwen2.5:latest"
 BASE_URL = "http://127.0.0.1:11434"
 
 

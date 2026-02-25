@@ -30,11 +30,10 @@ def cargar() -> List[BaseMessage]:
 
 
 def guardar(mensajes: List[BaseMessage]) -> None:
+    """Inserta solo los mensajes recibidos (sin borrar el historial previo)."""
     conn = get_conn()
     try:
         with conn.cursor() as cur:
-            # Borrar historial actual y reescribir completo
-            cur.execute("DELETE FROM conversaciones WHERE agente = %s", (AGENTE,))
             for m in mensajes:
                 if isinstance(m, HumanMessage):
                     cur.execute(

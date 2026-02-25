@@ -2,12 +2,12 @@
 
 import requests
 
-OLLAMA_URL = "http://127.0.0.1:11434/api/embeddings"
+OLLAMA_URL = "http://127.0.0.1:11434/api/embed"
 EMBED_MODEL = "nomic-embed-text"
 
 
 def get_embedding(texto: str) -> list[float]:
     """Convierte un texto en su vector de embeddings (768 dimensiones)."""
-    resp = requests.post(OLLAMA_URL, json={"model": EMBED_MODEL, "prompt": texto})
+    resp = requests.post(OLLAMA_URL, json={"model": EMBED_MODEL, "input": texto})
     resp.raise_for_status()
-    return resp.json()["embedding"]
+    return resp.json()["embeddings"][0]
