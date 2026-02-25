@@ -11,7 +11,7 @@ from memory.semantica import guardar_hecho, cargar_hechos, como_contexto as cont
 from memory.resumenes import como_contexto as contexto_resumenes
 from tools.sistema import SISTEMA_TOOLS
 from tools.proxmox import PROXMOX_TOOLS, PROXMOX_ENABLED
-from tools.ssh_pve import SSH_PVE_TOOLS, SSH_ENABLED as SSH_PVE_ENABLED
+from tools.ssh_pve import SSH_PVE_TOOLS, SSH_ENABLED as SSH_PVE_ENABLED, pve_explorar
 
 MODEL = "qwen2.5:latest"
 BASE_URL = "http://127.0.0.1:11434"
@@ -169,6 +169,29 @@ Reglas adicionales:
 8. Tus herramientas disponibles:
 {_describir_tools()}"""
 
+# ── Opción B: forzado de tools por keywords ──────────────────────────────────
+
+_KW_EXPLORAR = [
+    "explora", "explorar", "exploración",
+    "investiga proxmox", "investigar proxmox",
+    "qué tiene proxmox", "que tiene proxmox",
+    "estado del proxmox", "estado de proxmox",
+    "muéstrame proxmox", "muestrame proxmox",
+    "ver proxmox", "revisa proxmox", "checa proxmox",
+    "qué hay en proxmox", "que hay en proxmox",
+]
+
+
+def _auto_pve(texto: str) -> str:
+    """Si el mensaje pide explorar Proxmox, ejecuta pve_explorar y devuelve el resultado."""
+    if not SSH_PVE_ENABLED:
+        return ""
+    t = texto.lower()
+    if any(k in t for k in _KW_EXPLORAR):
+        return pve_explorar.invoke({})
+    return ""
+
+
 if __name__ == "__main__":
     mensajes_iniciales = cargar()
 
@@ -207,7 +230,16 @@ if __name__ == "__main__":
             state["messages"] = [SystemMessage(content=SYSTEM_PROMPT + "\n\n" + ctx_sem + "\n\n" + contexto_resumenes())] + state["messages"]
 
         n_antes = len(state["messages"])
-        state["messages"].append(HumanMessage(content=user))
+
+        # Opción B: pre-ejecutar tool si hay keywords de Proxmox
+        pve_ctx = _auto_pve(user)
+        if pve_ctx:
+            print("🔧 [Auto] Explorando Proxmox via SSH...\n")
+            msg = f"[Datos de Proxmox obtenidos automáticamente]:\n{pve_ctx}\n\nInstrucción del usuario: {user}"
+        else:
+            msg = user
+        state["messages"].append(HumanMessage(content=msg))
+
         state = app.invoke(state)
         last = state["messages"][-1]
         if isinstance(last, AIMessage) and isinstance(last.content, str):
