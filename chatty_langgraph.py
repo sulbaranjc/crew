@@ -13,7 +13,7 @@ from memory.semantica import guardar_hecho, cargar_hechos, como_contexto as cont
 from memory.resumenes import como_contexto as contexto_resumenes
 from tools.sistema import SISTEMA_TOOLS
 from tools.proxmox import PROXMOX_TOOLS, PROXMOX_ENABLED
-from tools.ssh_pve import SSH_PVE_TOOLS, SSH_ENABLED as SSH_PVE_ENABLED, pve_explorar
+from tools.ssh_pve import SSH_PVE_TOOLS, SSH_ENABLED as SSH_PVE_ENABLED, pve_explorar, pve_ups
 
 MODEL = "qwen2.5:latest"
 BASE_URL = "http://127.0.0.1:11434"
@@ -148,7 +148,7 @@ def _describir_tools() -> str:
     if PROXMOX_ENABLED:
         grupos["Proxmox API"] = ["proxmox_nodos", "proxmox_vms", "proxmox_cluster", "proxmox_version"]
     if SSH_PVE_ENABLED:
-        grupos["Proxmox SSH"] = ["pve_ejecutar", "pve_version", "pve_vms",
+        grupos["Proxmox SSH"] = ["pve_ejecutar", "pve_ups", "pve_version", "pve_vms",
                                   "pve_contenedores", "pve_almacenamiento", "pve_logs"]
     lineas = []
     for grupo, nombres in grupos.items():
@@ -227,12 +227,20 @@ _KW_EXPLORAR = [
     "qué hay en proxmox", "que hay en proxmox",
 ]
 
+_KW_UPS = [
+    "ups", "sai", "batería del servidor", "bateria del servidor",
+    "estado del ups", "estado del sai", "estado de la batería",
+    "salicru", "carga batería", "carga bateria",
+]
+
 
 def _auto_pve(texto: str) -> str:
-    """Si el mensaje pide explorar Proxmox, ejecuta pve_explorar y devuelve el resultado."""
+    """Pre-ejecuta tools SSH según keywords en el mensaje del usuario."""
     if not SSH_PVE_ENABLED:
         return ""
     t = texto.lower()
+    if any(k in t for k in _KW_UPS):
+        return pve_ups.invoke({})
     if any(k in t for k in _KW_EXPLORAR):
         return pve_explorar.invoke({})
     return ""

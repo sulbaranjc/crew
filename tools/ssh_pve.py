@@ -69,6 +69,13 @@ def pve_logs(servicio: str = "pve-cluster") -> str:
 
 
 @tool
+def pve_ups() -> str:
+    """Muestra el estado actual del UPS (SAI) conectado al servidor Proxmox:
+    carga de batería, voltaje, carga conectada y tiempo restante."""
+    return _ssh("~/scripts/estado_ups.sh")
+
+
+@tool
 def pve_explorar() -> str:
     """Explora el servidor Proxmox de forma completa: versión, nodos, VMs, contenedores,
     almacenamiento y recursos. Guarda automáticamente los hallazgos en la memoria semántica."""
@@ -102,5 +109,6 @@ def pve_explorar() -> str:
 
 SSH_PVE_TOOLS = [
     pve_ejecutar,
+    pve_ups,
     pve_explorar,
 ]
