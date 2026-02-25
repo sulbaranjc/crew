@@ -1,1 +1,0 @@
-# Nodo verifier: valida resultados

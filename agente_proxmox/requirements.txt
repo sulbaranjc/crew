@@ -1,6 +1,0 @@
-langchain
-langgraph
-langchain_ollama
-requests
-pydantic
-dotenv

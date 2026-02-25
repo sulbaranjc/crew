@@ -1,1 +1,0 @@
-# Nodo router: detecta intención

@@ -1,1 +1,0 @@
-# Nodo logger: log + memoria

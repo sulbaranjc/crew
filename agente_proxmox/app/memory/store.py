@@ -1,1 +1,0 @@
-# Persistencia (JSON/SQLite)
