@@ -1,0 +1,492 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Chatty</title>
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css" />
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:        #212121;
+      --bg-msg:    #2f2f2f;
+      --bg-user:   #2f2f2f;
+      --accent:    #10a37f;
+      --text:      #ececec;
+      --text-dim:  #8e8ea0;
+      --border:    #3f3f3f;
+      --input-bg:  #2f2f2f;
+      --radius:    12px;
+      --sidebar-w: 260px;
+    }
+
+    html, body { height: 100%; font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); color: var(--text); }
+
+    /* ── Layout ── */
+    .layout { display: flex; height: 100vh; }
+
+    /* ── Sidebar ── */
+    .sidebar {
+      width: var(--sidebar-w);
+      background: #171717;
+      display: flex;
+      flex-direction: column;
+      border-right: 1px solid var(--border);
+      flex-shrink: 0;
+    }
+    .sidebar-header {
+      padding: 20px 16px 12px;
+      font-size: 18px;
+      font-weight: 700;
+      color: var(--accent);
+      letter-spacing: 0.5px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .sidebar-header .emoji { font-size: 22px; }
+    .sidebar-status {
+      padding: 0 16px 16px;
+      font-size: 12px;
+      color: var(--text-dim);
+    }
+    .status-dot {
+      display: inline-block;
+      width: 7px; height: 7px;
+      border-radius: 50%;
+      background: var(--accent);
+      margin-right: 5px;
+      animation: pulse 2s infinite;
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.4; }
+    }
+    .sidebar-tools {
+      padding: 12px 16px;
+      flex: 1;
+      overflow-y: auto;
+    }
+    .sidebar-tools h3 {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      color: var(--text-dim);
+      margin-bottom: 10px;
+    }
+    .tool-badge {
+      display: inline-block;
+      background: #2a2a2a;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 3px 8px;
+      font-size: 11px;
+      color: var(--text-dim);
+      margin: 2px 2px 2px 0;
+    }
+    .sidebar-footer {
+      padding: 12px 16px;
+      border-top: 1px solid var(--border);
+      font-size: 12px;
+      color: var(--text-dim);
+    }
+
+    /* ── Main ── */
+    .main {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      min-width: 0;
+    }
+
+    /* ── Messages ── */
+    #messages {
+      flex: 1;
+      overflow-y: auto;
+      padding: 24px 0;
+      scroll-behavior: smooth;
+    }
+    #messages::-webkit-scrollbar { width: 6px; }
+    #messages::-webkit-scrollbar-track { background: transparent; }
+    #messages::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+    .msg-row {
+      display: flex;
+      gap: 12px;
+      padding: 10px 24px;
+      max-width: 860px;
+      margin: 0 auto;
+      width: 100%;
+      animation: fadeIn 0.2s ease;
+    }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+
+    .msg-row.user { flex-direction: row-reverse; }
+
+    .avatar {
+      width: 34px; height: 34px;
+      border-radius: 50%;
+      flex-shrink: 0;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 16px;
+      font-weight: 600;
+    }
+    .avatar.chatty { background: var(--accent); color: #fff; font-size: 18px; }
+    .avatar.user   { background: #5a5a7a; color: #fff; }
+
+    .bubble {
+      max-width: 75%;
+      padding: 12px 16px;
+      border-radius: var(--radius);
+      line-height: 1.65;
+      font-size: 14.5px;
+    }
+    .bubble.chatty {
+      background: var(--bg-msg);
+      border-top-left-radius: 4px;
+    }
+    .bubble.user {
+      background: var(--bg-user);
+      border-top-right-radius: 4px;
+      color: var(--text);
+    }
+
+    /* Markdown inside bubbles */
+    .bubble p  { margin-bottom: 8px; }
+    .bubble p:last-child { margin-bottom: 0; }
+    .bubble ul, .bubble ol { margin: 6px 0 8px 20px; }
+    .bubble li { margin-bottom: 4px; }
+    .bubble h1,.bubble h2,.bubble h3 { margin: 10px 0 6px; color: #fff; }
+    .bubble code:not(pre code) {
+      background: #1a1a2e; border: 1px solid var(--border);
+      border-radius: 4px; padding: 1px 5px; font-size: 13px;
+    }
+    .bubble pre {
+      background: #1a1a2e; border-radius: 8px; padding: 12px 14px;
+      overflow-x: auto; margin: 10px 0; border: 1px solid var(--border);
+    }
+    .bubble pre code { font-size: 13px; }
+    .bubble table { border-collapse: collapse; width: 100%; margin: 8px 0; font-size: 13px; }
+    .bubble th, .bubble td { border: 1px solid var(--border); padding: 6px 10px; }
+    .bubble th { background: #1e1e1e; }
+    .bubble a { color: var(--accent); }
+
+    /* Tool notification */
+    .tool-notif {
+      display: flex; align-items: center; gap: 8px;
+      padding: 6px 16px; margin: 4px auto;
+      max-width: 860px; width: 100%;
+    }
+    .tool-notif span {
+      font-size: 12px; color: var(--accent);
+      background: #0d2e26; border: 1px solid #1a4d3a;
+      border-radius: 20px; padding: 3px 10px;
+    }
+
+    /* Thinking indicator */
+    .thinking-row { padding: 10px 24px; max-width: 860px; margin: 0 auto; width: 100%; }
+    .thinking {
+      display: flex; align-items: center; gap: 10px;
+      color: var(--text-dim); font-size: 13px;
+    }
+    .dots span {
+      display: inline-block; width: 6px; height: 6px;
+      border-radius: 50%; background: var(--text-dim); margin: 0 2px;
+      animation: bounce 1.2s infinite;
+    }
+    .dots span:nth-child(2) { animation-delay: 0.2s; }
+    .dots span:nth-child(3) { animation-delay: 0.4s; }
+    @keyframes bounce {
+      0%, 80%, 100% { transform: translateY(0); opacity: 0.5; }
+      40% { transform: translateY(-6px); opacity: 1; }
+    }
+
+    /* ── Input area ── */
+    .input-area {
+      padding: 16px 24px 20px;
+      border-top: 1px solid var(--border);
+      background: var(--bg);
+    }
+    .input-wrapper {
+      display: flex;
+      align-items: flex-end;
+      gap: 10px;
+      background: var(--input-bg);
+      border: 1.5px solid var(--border);
+      border-radius: 14px;
+      padding: 10px 12px;
+      max-width: 860px;
+      margin: 0 auto;
+      transition: border-color 0.2s;
+    }
+    .input-wrapper:focus-within { border-color: var(--accent); }
+
+    #user-input {
+      flex: 1;
+      background: transparent;
+      border: none;
+      outline: none;
+      color: var(--text);
+      font-size: 15px;
+      resize: none;
+      max-height: 180px;
+      line-height: 1.5;
+      font-family: inherit;
+    }
+    #user-input::placeholder { color: var(--text-dim); }
+
+    #send-btn {
+      width: 34px; height: 34px;
+      border-radius: 8px;
+      border: none;
+      background: var(--accent);
+      color: #fff;
+      cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      flex-shrink: 0;
+      transition: background 0.15s, transform 0.1s;
+    }
+    #send-btn:hover { background: #0d8c6c; }
+    #send-btn:active { transform: scale(0.93); }
+    #send-btn:disabled { background: #3a3a3a; cursor: not-allowed; }
+    #send-btn svg { width: 16px; height: 16px; }
+
+    .input-hint {
+      text-align: center;
+      font-size: 11.5px;
+      color: var(--text-dim);
+      margin-top: 8px;
+      max-width: 860px;
+      margin-left: auto; margin-right: auto;
+    }
+
+    /* ── Welcome ── */
+    .welcome {
+      display: flex; flex-direction: column; align-items: center;
+      justify-content: center; height: 100%;
+      color: var(--text-dim); text-align: center; padding: 40px;
+    }
+    .welcome .logo { font-size: 52px; margin-bottom: 16px; }
+    .welcome h1 { font-size: 28px; color: var(--text); margin-bottom: 8px; }
+    .welcome p  { font-size: 15px; max-width: 400px; }
+
+    /* ── Responsive ── */
+    @media (max-width: 640px) {
+      .sidebar { display: none; }
+      .msg-row { padding: 8px 14px; }
+      .bubble { max-width: 90%; }
+    }
+  </style>
+</head>
+<body>
+<div class="layout">
+
+  <!-- Sidebar -->
+  <aside class="sidebar">
+    <div class="sidebar-header">
+      <span class="emoji">🦂</span> Chatty
+    </div>
+    <div class="sidebar-status">
+      <span class="status-dot"></span>Conectado · qwen2.5
+    </div>
+    <div class="sidebar-tools">
+      <h3>Herramientas</h3>
+      <span class="tool-badge">📁 archivos</span>
+      <span class="tool-badge">💻 sistema</span>
+      <span class="tool-badge">🧠 memoria</span>
+      <span class="tool-badge">🖥️ proxmox SSH</span>
+      <span class="tool-badge">🔋 UPS</span>
+      <span class="tool-badge">📅 fechas</span>
+      <span class="tool-badge">⚙️ bash</span>
+    </div>
+    <div class="sidebar-footer">
+      Ollama · local · privado
+    </div>
+  </aside>
+
+  <!-- Chat -->
+  <main class="main">
+    <div id="messages">
+      <div class="welcome" id="welcome">
+        <div class="logo">🦂</div>
+        <h1>Hola, soy Chatty</h1>
+        <p>Tu asistente personal local. ¿En qué puedo ayudarte hoy?</p>
+      </div>
+    </div>
+
+    <div class="input-area">
+      <div class="input-wrapper">
+        <textarea
+          id="user-input"
+          rows="1"
+          placeholder="Escribe un mensaje…"
+          autocomplete="off"
+        ></textarea>
+        <button id="send-btn" title="Enviar (Enter)">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
+               stroke-linecap="round" stroke-linejoin="round">
+            <line x1="22" y1="2" x2="11" y2="13"></line>
+            <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+          </svg>
+        </button>
+      </div>
+      <div class="input-hint">Enter para enviar · Shift+Enter para nueva línea</div>
+    </div>
+  </main>
+
+</div>
+
+<script>
+  // ── Config ──────────────────────────────────────────────────────────────
+  const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+  const ws    = new WebSocket(`${proto}://${location.host}/ws`);
+
+  const messagesEl = document.getElementById('messages');
+  const inputEl    = document.getElementById('user-input');
+  const sendBtn    = document.getElementById('send-btn');
+  const welcome    = document.getElementById('welcome');
+
+  let thinking = null;
+
+  // ── marked config ───────────────────────────────────────────────────────
+  marked.setOptions({
+    breaks: true,
+    highlight: (code, lang) => {
+      if (lang && hljs.getLanguage(lang)) {
+        return hljs.highlight(code, { language: lang }).value;
+      }
+      return hljs.highlightAuto(code).value;
+    }
+  });
+
+  // ── Helpers ─────────────────────────────────────────────────────────────
+  function scrollDown() {
+    messagesEl.scrollTo({ top: messagesEl.scrollHeight, behavior: 'smooth' });
+  }
+
+  function addMessage(role, text) {
+    if (welcome) welcome.remove();
+
+    const row = document.createElement('div');
+    row.className = `msg-row ${role}`;
+
+    const av = document.createElement('div');
+    av.className = `avatar ${role}`;
+    av.textContent = role === 'chatty' ? '🦂' : '👤';
+
+    const bubble = document.createElement('div');
+    bubble.className = `bubble ${role}`;
+    if (role === 'chatty') {
+      bubble.innerHTML = marked.parse(text);
+      bubble.querySelectorAll('pre code').forEach(el => hljs.highlightElement(el));
+    } else {
+      bubble.textContent = text;
+    }
+
+    row.appendChild(av);
+    row.appendChild(bubble);
+    messagesEl.appendChild(row);
+    scrollDown();
+    return bubble;
+  }
+
+  function addToolNotif(text) {
+    const row = document.createElement('div');
+    row.className = 'tool-notif';
+    const span = document.createElement('span');
+    span.textContent = text;
+    row.appendChild(span);
+    messagesEl.appendChild(row);
+    scrollDown();
+  }
+
+  function showThinking() {
+    removeThinking();
+    const row = document.createElement('div');
+    row.className = 'thinking-row';
+    row.innerHTML = `
+      <div class="thinking">
+        <div class="avatar chatty" style="width:34px;height:34px;font-size:18px">🦂</div>
+        <div class="dots">
+          <span></span><span></span><span></span>
+        </div>
+        <span style="font-size:13px;color:var(--text-dim)">Pensando…</span>
+      </div>`;
+    thinking = row;
+    messagesEl.appendChild(row);
+    scrollDown();
+  }
+
+  function removeThinking() {
+    if (thinking) { thinking.remove(); thinking = null; }
+  }
+
+  function setDisabled(val) {
+    inputEl.disabled = val;
+    sendBtn.disabled = val;
+  }
+
+  // ── Send ────────────────────────────────────────────────────────────────
+  function send() {
+    const text = inputEl.value.trim();
+    if (!text || sendBtn.disabled) return;
+
+    addMessage('user', text);
+    inputEl.value = '';
+    inputEl.style.height = 'auto';
+    setDisabled(true);
+
+    ws.send(JSON.stringify({ message: text }));
+  }
+
+  // ── WebSocket ───────────────────────────────────────────────────────────
+  ws.onmessage = (e) => {
+    const data = JSON.parse(e.data);
+    if (data.type === 'thinking') {
+      showThinking();
+    } else if (data.type === 'tool') {
+      addToolNotif(data.content);
+    } else if (data.type === 'message') {
+      removeThinking();
+      addMessage('chatty', data.content);
+      setDisabled(false);
+      inputEl.focus();
+    } else if (data.type === 'error') {
+      removeThinking();
+      addMessage('chatty', `⚠️ Error: ${data.content}`);
+      setDisabled(false);
+    }
+  };
+
+  ws.onclose = () => {
+    addToolNotif('⚠️ Conexión cerrada. Recarga la página.');
+    setDisabled(true);
+  };
+
+  ws.onerror = () => {
+    addToolNotif('⚠️ Error de conexión WebSocket.');
+  };
+
+  // ── Input events ────────────────────────────────────────────────────────
+  sendBtn.addEventListener('click', send);
+
+  inputEl.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      send();
+    }
+  });
+
+  // Auto-resize textarea
+  inputEl.addEventListener('input', () => {
+    inputEl.style.height = 'auto';
+    inputEl.style.height = Math.min(inputEl.scrollHeight, 180) + 'px';
+  });
+
+  inputEl.focus();
+</script>
+</body>
+</html>

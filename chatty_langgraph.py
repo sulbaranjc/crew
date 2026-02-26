@@ -289,83 +289,114 @@ def _auto_pve(texto: str) -> str:
     return ""
 
 
-if __name__ == "__main__":
-    mensajes_iniciales = cargar()
+# ── API pública (usada por CLI y servidor web) ────────────────────────────────
 
+def crear_estado_inicial() -> dict:
+    """Inicializa el estado de conversación cargando historial y contexto."""
+    mensajes = cargar()
     sistema = SYSTEM_PROMPT
     contexto = "\n\n".join(filter(None, [contexto_resumenes(), contexto_semantico()]))
     if contexto:
         sistema += "\n\n" + contexto
+    return {"messages": [SystemMessage(content=sistema)] + mensajes}
 
-    mensajes_iniciales = [SystemMessage(content=sistema)] + mensajes_iniciales
-    state: State = {"messages": mensajes_iniciales}
 
-    poderes = f"archivos · sistema · memoria"
-    if PROXMOX_ENABLED:
-        poderes += " · proxmox"
-    print(f"Chatty [{poderes}]. Escribe 'salir' para terminar.\n")
+def procesar_mensaje(user: str, state: dict) -> tuple[str, dict, list[str]]:
+    """
+    Procesa un mensaje del usuario.
+    Devuelve (respuesta_final, nuevo_state, notificaciones).
+    Las notificaciones son strings informativos (tools silenciosas, pre-ejecuciones).
+    """
+    notificaciones: list[str] = []
 
-    for m in mensajes_iniciales:
-        if isinstance(m, HumanMessage):
-            print("👨 Tú:", m.content)
-        elif isinstance(m, AIMessage) and isinstance(m.content, str):
-            print("🦂 Chatty:", m.content)
-    if mensajes_iniciales:
-        print()
+    # Actualizar contexto semántico si el mensaje es sustancioso
+    ctx_sem = contexto_semantico(user) if len(user) >= 15 else ""
+    if ctx_sem:
+        state["messages"] = [m for m in state["messages"] if not isinstance(m, SystemMessage)]
+        state["messages"] = [SystemMessage(content=SYSTEM_PROMPT + "\n\n" + ctx_sem + "\n\n" + contexto_resumenes())] + state["messages"]
 
-    while True:
-        user = input("👨 Tú: ").strip()
-        if user.lower() in {"salir", "exit", "quit"}:
-            break
+    n_antes = len(state["messages"])
 
-        # Buscar contexto semántico solo si el mensaje es sustancioso
-        ctx_sem = contexto_semantico(user) if len(user) >= 15 else ""
-        if ctx_sem:
-            state["messages"] = [
-                m for m in state["messages"] if not isinstance(m, SystemMessage)
-            ]
-            state["messages"] = [SystemMessage(content=SYSTEM_PROMPT + "\n\n" + ctx_sem + "\n\n" + contexto_resumenes())] + state["messages"]
+    # Pre-ejecución por keywords (Proxmox / UPS)
+    pve_ctx = _auto_pve(user)
+    if pve_ctx:
+        notificaciones.append("🔧 Proxmox explorado automáticamente.")
+        msg = f"[Datos de Proxmox obtenidos automáticamente]:\n{pve_ctx}\n\nInstrucción del usuario: {user}"
+    else:
+        msg = user
+    state["messages"].append(HumanMessage(content=msg))
 
-        n_antes = len(state["messages"])
+    state = app.invoke(state)
+    last = state["messages"][-1]
+    respuesta_final = ""
 
-        # Opción B: pre-ejecutar tool si hay keywords de Proxmox
-        pve_ctx = _auto_pve(user)
-        if pve_ctx:
-            print("🔧 [Auto] Explorando Proxmox via SSH...\n")
-            msg = f"[Datos de Proxmox obtenidos automáticamente]:\n{pve_ctx}\n\nInstrucción del usuario: {user}"
-        else:
-            msg = user
-        state["messages"].append(HumanMessage(content=msg))
+    if isinstance(last, AIMessage) and isinstance(last.content, str):
+        texto_limpio, ejecutados = _interceptar_y_ejecutar(last.content)
 
-        state = app.invoke(state)
-        last = state["messages"][-1]
+        if ejecutados:
+            silenciosas = {k: v for k, v in ejecutados.items() if k in _TOOLS_SILENCIOSAS}
+            con_datos   = {k: v for k, v in ejecutados.items() if k not in _TOOLS_SILENCIOSAS}
 
-        if isinstance(last, AIMessage) and isinstance(last.content, str):
-            texto_limpio, ejecutados = _interceptar_y_ejecutar(last.content)
+            for nombre in silenciosas:
+                notificaciones.append(f"💾 [{nombre}] guardado en memoria.")
 
-            if ejecutados:
-                silenciosas = {k: v for k, v in ejecutados.items() if k in _TOOLS_SILENCIOSAS}
-                con_datos   = {k: v for k, v in ejecutados.items() if k not in _TOOLS_SILENCIOSAS}
-
-                # Tools silenciosas: solo confirmar, no re-invocar
-                for nombre in silenciosas:
-                    print(f"💾 [{nombre}] guardado en memoria.\n")
-
-                if con_datos:
-                    # Re-invocar LLM con los datos para que los presente correctamente
-                    ctx = "\n".join(f"[Resultado de {k}]:\n{v}" for k, v in con_datos.items())
-                    msgs_reinvoke = state["messages"] + [
-                        HumanMessage(content=f"[Datos obtenidos automáticamente]:\n{ctx}\n\nPresenta estos resultados al usuario de forma clara y en español.")
-                    ]
-                    reinvocado = llm.invoke(msgs_reinvoke)
-                    respuesta_final = reinvocado.content if isinstance(reinvocado.content, str) else texto_limpio
-                    state["messages"].append(AIMessage(content=respuesta_final))
-                else:
-                    respuesta_final = texto_limpio or "Hecho."
-                    state["messages"][-1] = AIMessage(content=respuesta_final)
-
-                print("🦂 Chatty:", respuesta_final, "\n")
+            if con_datos:
+                ctx = "\n".join(f"[Resultado de {k}]:\n{v}" for k, v in con_datos.items())
+                msgs_reinvoke = state["messages"] + [
+                    HumanMessage(content=f"[Datos obtenidos automáticamente]:\n{ctx}\n\nPresenta estos resultados al usuario de forma clara y en español.")
+                ]
+                reinvocado = llm.invoke(msgs_reinvoke)
+                respuesta_final = reinvocado.content if isinstance(reinvocado.content, str) else texto_limpio
+                state["messages"].append(AIMessage(content=respuesta_final))
             else:
-                print("🦂 Chatty:", last.content, "\n")
+                respuesta_final = texto_limpio or "Hecho."
+                state["messages"][-1] = AIMessage(content=respuesta_final)
+        else:
+            respuesta_final = last.content
 
-        guardar(state["messages"][n_antes:])
+    guardar(state["messages"][n_antes:])
+    return respuesta_final, state, notificaciones
+
+
+# ── Punto de entrada ──────────────────────────────────────────────────────────
+
+if __name__ == "__main__":
+    import argparse
+    parser = argparse.ArgumentParser(description="Chatty — asistente local")
+    parser.add_argument("--web", action="store_true", help="Lanzar interfaz web en http://localhost:8000")
+    parser.add_argument("--port", type=int, default=8000, help="Puerto para el servidor web")
+    args = parser.parse_args()
+
+    if args.web:
+        import uvicorn
+        from server import app as web_app
+        print(f"🌐 Chatty Web → http://localhost:{args.port}")
+        uvicorn.run(web_app, host="0.0.0.0", port=args.port)
+    else:
+        # ── Modo CLI ─────────────────────────────────────────────────────────
+        state = crear_estado_inicial()
+
+        poderes = "archivos · sistema · memoria"
+        if PROXMOX_ENABLED:
+            poderes += " · proxmox"
+        if SSH_PVE_ENABLED:
+            poderes += " · pve-ssh"
+        print(f"Chatty [{poderes}]. Escribe 'salir' para terminar.\n")
+
+        for m in state["messages"]:
+            if isinstance(m, HumanMessage):
+                print("👨 Tú:", m.content)
+            elif isinstance(m, AIMessage) and isinstance(m.content, str):
+                print("🦂 Chatty:", m.content)
+        if len(state["messages"]) > 1:
+            print()
+
+        while True:
+            user = input("👨 Tú: ").strip()
+            if user.lower() in {"salir", "exit", "quit"}:
+                break
+
+            respuesta, state, notifs = procesar_mensaje(user, state)
+            for n in notifs:
+                print(n)
+            print("🦂 Chatty:", respuesta, "\n")
