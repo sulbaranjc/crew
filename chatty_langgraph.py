@@ -22,6 +22,35 @@ BASE_URL = "http://127.0.0.1:11434"
 # ── Tools exclusivas de Chatty ────────────────────────────────────────────────
 
 @tool
+def ejecutar_en_laptop(comando: str) -> str:
+    """Ejecuta un comando en la laptop del usuario. Permite operaciones de lectura Y escritura:
+    mkdir, touch, cp, mv, rm (archivos), echo, git, python, etc.
+    Ejemplos: 'mkdir ~/Descargas/temp', 'touch ~/notas.txt', 'mv ~/a.txt ~/b.txt'.
+    Úsala cuando el usuario pida crear directorios, mover archivos, renombrar, etc."""
+    import subprocess
+    BLOQUEADOS = [
+        "rm -rf /", "rm -rf ~", ":(){ ", "mkfs", "dd if=",
+        "fdisk", "parted", "reboot", "shutdown", "poweroff",
+        "sudo", "su -", "passwd", "visudo",
+        "curl | bash", "wget | bash", "curl|bash", "wget|bash",
+    ]
+    cmd_lower = comando.lower()
+    for b in BLOQUEADOS:
+        if b in cmd_lower:
+            return f"[Bloqueado] Operación no permitida: '{b}'"
+    try:
+        r = subprocess.run(
+            comando, shell=True, capture_output=True, text=True, timeout=15,
+            cwd=os.path.expanduser("~"),
+        )
+        return r.stdout.strip() or r.stderr.strip() or "(sin salida)"
+    except subprocess.TimeoutExpired:
+        return "[Error] El comando tardó demasiado."
+    except Exception as e:
+        return f"[Error] {e}"
+
+
+@tool
 def crear_archivo(ruta: str, contenido: str) -> str:
     """Crea o sobreescribe un archivo en la ruta indicada con el contenido dado."""
     try:
@@ -96,6 +125,7 @@ def ver_lo_que_recuerdo() -> str:
 # ── Registro de tools ─────────────────────────────────────────────────────────
 
 CHATTY_TOOLS = [
+    ejecutar_en_laptop,
     crear_archivo, eliminar_archivo, cambiar_permisos,
     recordar_hecho, ver_lo_que_recuerdo, dia_de_la_semana,
 ]
@@ -137,7 +167,7 @@ app = graph.compile()
 
 def _describir_tools() -> str:
     grupos = {
-        "Archivos y sistema": ["crear_archivo", "eliminar_archivo", "cambiar_permisos",
+        "Archivos y sistema": ["ejecutar_en_laptop", "crear_archivo", "eliminar_archivo", "cambiar_permisos",
                                "leer_archivo", "listar_directorio", "buscar_archivos",
                                "buscar_contenido", "ejecutar_comando_seguro"],
         "Monitoreo":          ["info_sistema", "uso_disco", "uso_memoria",
