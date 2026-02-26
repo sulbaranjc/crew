@@ -210,38 +210,47 @@ Reglas adicionales:
 
 def _interceptar_y_ejecutar(texto: str) -> tuple[str, dict[str, str]]:
     """
-    Detecta patrones -?tool_name("arg") o tool_name() en el texto del modelo,
-    los ejecuta realmente y devuelve (texto_limpio, {nombre: resultado}).
+    Detecta y ejecuta en el texto del modelo:
+    1. Llamadas a tools: -?tool_name("arg") o tool_name()
+    2. Bloques bash/sh:  ```bash\\ncomando\\n```
 
-    Funciona para cualquier tool del mapa sin mantenimiento adicional.
+    Devuelve (texto_limpio, {descripcion: resultado}).
     """
-    if not _TOOLS_MAP:
-        return texto, {}
-
-    # Ordenar por longitud descendente para evitar coincidencias parciales
-    nombres_re = "|".join(re.escape(n) for n in sorted(_TOOLS_MAP.keys(), key=len, reverse=True))
-    # Captura: -?tool_name(  "contenido"  ) o tool_name()
-    patron = re.compile(
-        rf'-?({nombres_re})\s*\(\s*(?:"((?:[^"\\]|\\.)*)"\s*)?\)',
-        re.MULTILINE | re.DOTALL,
-    )
-
     ejecutados: dict[str, str] = {}
-    for m in patron.finditer(texto):
-        nombre = m.group(1)
-        arg_str = m.group(2)  # None si no hay argumento entre comillas
-        t = _TOOLS_MAP[nombre]
-        try:
-            if arg_str is None:
-                res = t.invoke({})
-            else:
-                params = list(inspect.signature(t.func).parameters.keys())
-                res = t.invoke({params[0]: arg_str} if params else {})
-        except Exception as e:
-            res = f"[Error al ejecutar {nombre}: {e}]"
-        ejecutados[nombre] = str(res)
+    texto_limpio = texto
 
-    texto_limpio = patron.sub("", texto).strip()
+    # ── 1. Tool calls escritas como texto ────────────────────────────────────
+    if _TOOLS_MAP:
+        nombres_re = "|".join(re.escape(n) for n in sorted(_TOOLS_MAP.keys(), key=len, reverse=True))
+        patron_tool = re.compile(
+            rf'-?({nombres_re})\s*\(\s*(?:"((?:[^"\\]|\\.)*)"\s*)?\)',
+            re.MULTILINE | re.DOTALL,
+        )
+        for m in patron_tool.finditer(texto_limpio):
+            nombre = m.group(1)
+            arg_str = m.group(2)
+            t = _TOOLS_MAP[nombre]
+            try:
+                if arg_str is None:
+                    res = t.invoke({})
+                else:
+                    params = list(inspect.signature(t.func).parameters.keys())
+                    res = t.invoke({params[0]: arg_str} if params else {})
+            except Exception as e:
+                res = f"[Error al ejecutar {nombre}: {e}]"
+            ejecutados[nombre] = str(res)
+        texto_limpio = patron_tool.sub("", texto_limpio).strip()
+
+    # ── 2. Bloques ```bash / ```sh escritos como texto ────────────────────────
+    patron_bash = re.compile(r'```(?:bash|sh)\n(.*?)\n```', re.DOTALL)
+    for m in patron_bash.finditer(texto_limpio):
+        cmd = m.group(1).strip()
+        if not cmd:
+            continue
+        res = ejecutar_en_laptop.invoke({"comando": cmd})
+        ejecutados[f"bash: {cmd[:40]}"] = str(res)
+    texto_limpio = patron_bash.sub("", texto_limpio).strip()
+
     return texto_limpio, ejecutados
 
 
