@@ -14,6 +14,7 @@ from memory.resumenes import como_contexto as contexto_resumenes
 from tools.sistema import SISTEMA_TOOLS
 from tools.proxmox import PROXMOX_TOOLS, PROXMOX_ENABLED
 from tools.ssh_pve import SSH_PVE_TOOLS, SSH_ENABLED as SSH_PVE_ENABLED, pve_explorar, pve_ups
+from persona import PERSONALIDAD, REGLAS_OPERATIVAS
 
 MODEL = "qwen2.5:latest"
 BASE_URL = "http://127.0.0.1:11434"
@@ -190,25 +191,18 @@ def _describir_tools() -> str:
     return "\n".join(lineas)
 
 
-SYSTEM_PROMPT = f"""Eres Chatty, un asistente personal con acceso a herramientas del sistema.
+def _construir_system_prompt() -> str:
+    """
+    Construye el system prompt combinando personalidad, reglas y tools.
+    Separar en capas permite evolucionar cada parte de forma independiente.
+    """
+    return "\n\n".join([
+        PERSONALIDAD.strip(),
+        REGLAS_OPERATIVAS.strip(),
+        f"HERRAMIENTAS DISPONIBLES:\n{_describir_tools()}",
+    ])
 
-REGLA CRÍTICA: Cuando necesites información o realizar una acción, LLAMA A LA TOOL DIRECTAMENTE.
-NUNCA pidas al usuario que ejecute comandos. NUNCA muestres código sh para que el usuario lo ejecute.
-Tú tienes las herramientas — úsalas tú mismo sin preguntar permiso.
-
-Reglas adicionales:
-1. Tu nombre es CHATTY. Nunca digas que te llamas Qwen ni ningún otro nombre.
-2. Responde ÚNICAMENTE en español. PROHIBIDO usar caracteres chinos, japoneses o coreanos.
-3. Sé directo y conciso.
-4. MEMORIA: Cuando el usuario comparta datos personales (nombre, trabajo, ciudad, estudios,
-   preferencias, etc.), llama INMEDIATAMENTE a `recordar_hecho`. Hazlo de forma silenciosa.
-5. FECHAS: Para calcular el día de la semana, SIEMPRE usa la tool `dia_de_la_semana`.
-6. PROXMOX: Tienes acceso SSH directo al servidor Proxmox. Usa `pve_explorar` para exploración
-   completa o `pve_ejecutar` para comandos específicos. EJECÚTALOS TÚ, no se los pidas al usuario.
-7. HERRAMIENTAS FALTANTES: Si no puedes resolver algo con tus tools actuales, díselo y explica
-   qué tool habría que programar.
-8. Tus herramientas disponibles:
-{_describir_tools()}"""
+SYSTEM_PROMPT = _construir_system_prompt()
 
 # ── Interceptor: detecta tool calls escritas como texto y las ejecuta ────────
 
