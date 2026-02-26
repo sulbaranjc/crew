@@ -28,16 +28,20 @@ def ejecutar_en_laptop(comando: str) -> str:
     Ejemplos: 'mkdir ~/Descargas/temp', 'touch ~/notas.txt', 'mv ~/a.txt ~/b.txt'.
     Úsala cuando el usuario pida crear directorios, mover archivos, renombrar, etc."""
     import subprocess
-    BLOQUEADOS = [
-        "rm -rf /", "rm -rf ~", ":(){ ", "mkfs", "dd if=",
-        "fdisk", "parted", "reboot", "shutdown", "poweroff",
-        "sudo", "su -", "passwd", "visudo",
-        "curl | bash", "wget | bash", "curl|bash", "wget|bash",
+    # Patrones de regex que bloquean comandos destructivos
+    BLOQUEADOS_RE = [
+        r"rm\s+-rf\s+[/~]\s*$",        # rm -rf / o rm -rf ~ (raíz o home entero)
+        r"rm\s+-rf\s+/",               # rm -rf /cualquier-cosa-absoluta
+        r":\(\)\{",                     # fork bomb
+        r"\bmkfs\b", r"\bdd\b\s+if=",
+        r"\bfdisk\b", r"\bparted\b",
+        r"\breboot\b", r"\bshutdown\b", r"\bpoweroff\b",
+        r"\bsudo\b", r"\bsu\s+-\b", r"\bpasswd\b", r"\bvisudo\b",
+        r"curl\s*\|?\s*bash", r"wget\s*\|?\s*bash",
     ]
-    cmd_lower = comando.lower()
-    for b in BLOQUEADOS:
-        if b in cmd_lower:
-            return f"[Bloqueado] Operación no permitida: '{b}'"
+    for patron in BLOQUEADOS_RE:
+        if re.search(patron, comando, re.IGNORECASE):
+            return f"[Bloqueado] Operación no permitida (patrón: {patron})"
     try:
         r = subprocess.run(
             comando, shell=True, capture_output=True, text=True, timeout=15,
